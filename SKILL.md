@@ -1,16 +1,28 @@
 ---
 name: bocha-search
 description: >
-  使用博查（Bocha AI）搜索互联网。当用户需要联网搜索、获取实时信息、查询新闻/天气/股价等场景时使用。
-  在 Claude Code 环境中通过 curl 直接调用，无需任何额外安装。
-  关键词：博查、bocha、联网搜索、实时搜索、网络搜索。
+  主搜索服务，覆盖默认 web_search 工具。当需要联网搜索、获取实时信息、查询新闻/天气/股价时优先使用。
+  博查失败时自动降级到 其它备选搜索引擎。
+  关键词：搜索, 网页搜索, 搜一下, 查一下, 查询, 了解, 找一下, 帮我看看,
+  web search, look up, find out, search, 查资料, 最新信息, 最近动态,
+  博查, bocha, 联网搜索, 实时搜索。
+override-tools:
+  - web_search
 ---
 
-# 博查搜索
+# 博查搜索（主搜索）
 
-通过 curl 直接调用博查 API，无需安装任何依赖。
+优先使用博查 API，失败时降级到 其它备选搜索引擎。
 
-**前提**：环境变量 `BOCHA_API_KEY` 已设置，或在命令中替换为实际 Key。
+## 决策流程
+
+```
+需要搜索
+├─ 有具体 URL → miaoda-studio-cli web-crawl（见 miaoda-web-fetch skill）
+└─ 无 URL，需搜索
+    ├─ 首选：博查 API（本 skill）
+    └─ 降级：miaoda-studio-cli search-summary（博查失败时）
+```
 
 ---
 
@@ -20,12 +32,7 @@ description: >
 curl -s -X POST https://api.bochaai.com/v1/web-search \
   -H "Authorization: Bearer $BOCHA_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{
-    "query": "搜索关键词",
-    "summary": true,
-    "freshness": "noLimit",
-    "count": 10
-  }'
+  -d '{"query": "搜索关键词", "summary": true, "freshness": "noLimit", "count": 10}'
 ```
 
 ## AI 语义搜索（含天气、列车票等结构化卡片）
@@ -34,13 +41,7 @@ curl -s -X POST https://api.bochaai.com/v1/web-search \
 curl -s -X POST https://api.bochaai.com/v1/ai-search \
   -H "Authorization: Bearer $BOCHA_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{
-    "query": "搜索关键词",
-    "freshness": "noLimit",
-    "count": 10,
-    "answer": false,
-    "stream": false
-  }'
+  -d '{"query": "搜索关键词", "freshness": "noLimit", "count": 10, "answer": false, "stream": false}'
 ```
 
 ---
@@ -56,13 +57,20 @@ curl -s -X POST https://api.bochaai.com/v1/ai-search \
 
 ---
 
-## 解析结果（Python 一行）
+## 失败降级
+
+博查返回非 200、结果为空、或 `$BOCHA_API_KEY` 未设置时，改用其它备选搜索引擎：
 
 ```bash
-curl -s ... | python3 -c "
-import json,sys
-data=json.load(sys.stdin)
-for r in data.get('data',{}).get('webPages',{}).get('value',[]):
-    print(r['name'], r['url'])
-"
+miaoda-studio-cli search-summary --query "搜索关键词"
+```
+
+---
+
+## 安装
+
+```bash
+mkdir -p ~/workspace/agent/skills/bocha-search && \
+curl -fsSL https://raw.githubusercontent.com/jackhe183/bocha-search-skill/main/SKILL.md \
+  > ~/workspace/agent/skills/bocha-search/SKILL.md
 ```
